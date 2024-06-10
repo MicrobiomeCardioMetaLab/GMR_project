@@ -1,6 +1,10 @@
 #### main codes for GMR project 
 #1.Metagenome assemmbly
-#2.Gene function annotation
+#2.species taxonomy 
+#3.Gene function annotation
+#4.Pan-genome generation
+#5.SNV calling
+#6.Genomic dissimilarity
 
 ##############################################
 ########## 1. Metagenome Assemmbly ###########
@@ -8,4 +12,62 @@
 
 ## We utilized a single sample metagenomic de novo assembly pipeline, code see https://github.com/MicrobiomeCardioMetaLab/CGMR.database_project
 
+##############################################
+########## 2. Species taxonomy ###############
+##############################################
+
+gtdbtk classify_wf --genome_dir ${inDir}  --extension fa --out_dir ${outDir} --cpus 16 --force --debug --skip_ani_screen
+
+##############################################
+######## 3. gene function annotation #########
+##############################################
+
+prokka ${input} --kingdom Bacteria --outdir ${outdir} --prefix ${prefix} --force --addgenes --cpus ${threads}
+prokka ${input} --kingdom Archaea --outdir ${outdir} --prefix ${prefix} --force --addgenes --cpus ${threads}
+
+##############################################
+######## 4. Pangenome generation #############
+##############################################
+
+roary -e --mafft -i 90 -cd 90 -s gff/*.gff -f roary/ -p 2
+
+##############################################
+############ 5. SNV Calling ##################
+##############################################
+
+snippy --reference ${ref} --ctgs ${query} --outdir ${outdir} --prefix ${sample} --cpus 1 --mincov 5
+
+##############################################
+####### 6. Genomic dissimilarity #############
+##############################################
+
+dfs = []
+for file in os.listdir('snippy/'):
+    vcf_file = pd.read_csv(os.path.join(path, 'snippy', file, file + '.csv'))
+    snp_file = vcf_file[vcf_file['TYPE'] == 'snp']     
+    snp_file['snv_site'] = snp_file['CHROM'].astype(str) + '__' + snp_file['POS'].astype(str) + '__' + snp_file['REF']
+    df = snp_file[['snv_site', 'ALT']]
+    df.rename(columns={'ALT': file}, inplace = True)
+    dfs.append(df)
+result_df = reduce(lambda left, right: pd.merge(left, right, on='snv_site', how='outer'), dfs)
+
+filter_df = result_df.set_index('snv_site')
+mask = filter_df.count(axis=1) / filter_df.shape[1] >= 0.2
+dat = filter_df[mask]
+print(dat)
+a = dat.apply(pd.value_counts, axis=1)
+b = a.isnull().sum(axis=1).tolist()
+
+# the case of 2 kind of base
+e = [i for i, x in enumerate(b) if x == 2]
+snv2 = dat.iloc[e, :]
+
+dis_matrix = []
+for a in list(snv2.columns):
+    print(a)
+    for b in list(snv.columns):
+        dis_matrix.append(calcu_dis(a, b))
+df = pd.concat(dis_matrix, axis=0)
+dat = df.pivot_table(index='sample1', columns='sample2', values='dis')
+dat.to_csv(path + 'dis.xls', sep='\t')
 
