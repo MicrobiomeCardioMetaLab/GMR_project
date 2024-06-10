@@ -1,0 +1,11 @@
+#### main codes for GMR project 
+#1.Metagenome assemmbly
+#2.Gene function annotation
+
+##############################################
+########## 1. Metagenome Assemmbly ###########
+##############################################
+
+## We utilized a single sample metagenomic de novo assembly pipeline, code see https://github.com/MicrobiomeCardioMetaLab/CGMR.database_project
+
+
