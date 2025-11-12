@@ -1,10 +1,11 @@
-#### main codes for GMR project 
+#### main codes for GMR_database project 
 #1.Metagenome assemmbly
-#2.species taxonomy 
-#3.Gene function annotation
-#4.Pan-genome generation
-#5.SNV calling
-#6.Genomic dissimilarity
+#2.Species taxonomy 
+#3.Species cluster
+#4.Gene function annotation
+#5.GUNC classification
+#6.ARG identification
+#7.Species abundance 
 
 ##############################################
 ########## 1. Metagenome Assemmbly ###########
@@ -19,55 +20,50 @@
 gtdbtk classify_wf --genome_dir ${inDir}  --extension fa --out_dir ${outDir} --cpus 16 --force --debug --skip_ani_screen
 
 ##############################################
-######## 3. gene function annotation #########
+########## 3. Species cluster ###############
+##############################################
+
+dRep dereplicate dRep  --genomeInfo dRep/data_tables/genomeInfo.csv --S_algorithm fastANI --multiround_primary_clustering  --greedy_secondary_clustering -comp 50 -con 5 -ms 10000 -pa 0.9 -sa 0.95 -nc 0.30 -cm larger -p 16
+
+##############################################
+######## 4. gene function annotation #########
 ##############################################
 
 prokka ${input} --kingdom Bacteria --outdir ${outdir} --prefix ${prefix} --force --addgenes --cpus ${threads}
 prokka ${input} --kingdom Archaea --outdir ${outdir} --prefix ${prefix} --force --addgenes --cpus ${threads}
+mmseqs createdb GMR_478588_proteinnewID.faa GMRP_478588_DB
+mmseqs cluster GMR_${BA_GENE}_rmdupDB GMR_${BA_GENE}_rmdupDB_clu tmp --cov-mode 0 -c 0.9 --min-seq-id 0.95  --threads ${threads}
+mmseqs createtsv GMR_${BA_GENE}_rmdupDB GMR_${BA_GENE}_rmdupDB GMR_${BA_GENE}_rmdupDB_clu GMR_${BA_GENE}_rmdupDB_clu.tsv --threads ${threads}
+less GMR_${BA_GENE}_rmdupDB_clu.tsv | cut -f 1 | sort | uniq -c | awk -F ' ' '{print $2}' | less > ${BA_GENE}_mmseq_cluID3.txt
 
 ##############################################
-######## 4. Pangenome generation #############
+######### 5. GUNC classification #############
+##############################################
+gunc run \
+ -r gunc_db_progenomes2.1.dmnd \
+ -i ${sample}.fa.gz \
+ -t 4 \
+ -o sg_output/${sample} \
+ --temp_dir sg_output/${sample} \
+ --sensitive \
+ --detailed_output
+
+##############################################
+########## 6. ARG identification #############
 ##############################################
 
-roary -e --mafft -i 90 -cd 90 -s gff/*.gff -f roary/ -p 2
+abricate ${mag}.ffn --db resfinder > ${mag}.tsv
+
 
 ##############################################
-############ 5. SNV Calling ##################
+########### 7. Species abundance #############
 ##############################################
 
-snippy --reference ${ref} --ctgs ${query} --outdir ${outdir} --prefix ${sample} --cpus 1 --mincov 5
-
-##############################################
-####### 6. Genomic dissimilarity #############
-##############################################
-
-dfs = []
-for file in os.listdir('snippy/'):
-    vcf_file = pd.read_csv(os.path.join(path, 'snippy', file, file + '.csv'))
-    snp_file = vcf_file[vcf_file['TYPE'] == 'snp']     
-    snp_file['snv_site'] = snp_file['CHROM'].astype(str) + '__' + snp_file['POS'].astype(str) + '__' + snp_file['REF']
-    df = snp_file[['snv_site', 'ALT']]
-    df.rename(columns={'ALT': file}, inplace = True)
-    dfs.append(df)
-result_df = reduce(lambda left, right: pd.merge(left, right, on='snv_site', how='outer'), dfs)
-
-filter_df = result_df.set_index('snv_site')
-mask = filter_df.count(axis=1) / filter_df.shape[1] >= 0.2
-dat = filter_df[mask]
-print(dat)
-a = dat.apply(pd.value_counts, axis=1)
-b = a.isnull().sum(axis=1).tolist()
-
-# the case of 2 kind of base
-e = [i for i, x in enumerate(b) if x == 2]
-snv2 = dat.iloc[e, :]
-
-dis_matrix = []
-for a in list(snv2.columns):
-    print(a)
-    for b in list(snv.columns):
-        dis_matrix.append(calcu_dis(a, b))
-df = pd.concat(dis_matrix, axis=0)
-dat = df.pivot_table(index='sample1', columns='sample2', values='dis')
-dat.to_csv(path + 'dis.xls', sep='\t')
-
+metaphlan --bowtie2db DataBase/metaphlan4_GMR/  \
+${fq_dir}/${sample}_paired_1.fastq.gz,${fq_dir}/${sample}_paired_2.fastq.gz \
+--index mpa_v202403_GMR \ 
+--input_type fastq --nproc ${threads} \
+--output_file ${dir}/${sample}.profile \
+-s ${dir}/${sample}.sam.bz2 \
+--bowtie2out ${dir}/${sample}.bowtie2_out.bz2 \
+--unclassified_estimation 
